@@ -105,7 +105,7 @@ Outputs:
     Value: !GetAtt MyIAMUser.Arn
   AccessKeyId:
     Description: 'Access Key ID of the IAM user'
-    Value: !GetAtt MyAccessKey.AccessKeyId
+    Value: !Ref MyAccessKey.AccessKeyId # AccessKeyId is a property, not an attribute
   SecretAccessKey:
     Description: 'Secret Access Key of the IAM user'
-    Value: !GetAtt MyAccessKey.SecretAccessKey
+    Value: !Ref MyAccessKey.SecretAccessKey # SecretAccessKey is a property, not an attribute
