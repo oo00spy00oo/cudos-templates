@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Creates an IAM user with an access key and secret key, and outputs the ARN, access key, and secret key. Also creates a QuickSight view policy for the user and a CloudFormation stack policy.'
+
+Resources:
+  MyIAMUser:
+    Type: 'AWS::IAM::User'
+    Properties:
+      UserName: CUDOS-User
+
+  MyAccessKey:
+    Type: 'AWS::IAM::AccessKey'
+    Properties:
+      UserName: !Ref MyIAMUser
+
+  QuickSightViewPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: QuickSightViewPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt MyIAMUser.Arn
+            Action:
+              - quicksight:DescribeDashboard
+              - quicksight:DescribeDataSet
+              - quicksight:DescribeTheme
+              - quicksight:DescribeAnalysis
+              - quicksight:DescribeIngestion
+              - quicksight:DescribeDataSource
+              - quicksight:DescribeTemplate
+              - quicksight:DescribeUser
+              - quicksight:DescribeGroup
+              - quicksight:DescribeNamespace
+              - quicksight:DescribeAccountSettings
+              - quicksight:DescribeFolder
+              - quicksight:DescribeFolderPermissions
+              - quicksight:DescribeFolderMembers
+              - quicksight:DescribeFolderHierarchy
+              - quicksight:DescribeThemePermissions
+              - quicksight:DescribeThemeMembers
+              - quicksight:DescribeThemeHierarchy
+              - quicksight:DescribeDashboardPermissions
+              - quicksight:DescribeDashboardMembers
+              - quicksight:DescribeDashboardHierarchy
+              - quicksight:DescribeAnalysisPermissions
+              - quicksight:DescribeAnalysisMembers
+              - quicksight:DescribeAnalysisHierarchy
+              - quicksight:DescribeDataSetPermissions
+              - quicksight:DescribeDataSetMembers
+              - quicksight:DescribeDataSetHierarchy
+              - quicksight:DescribeDataSourcePermissions
+              - quicksight:DescribeDataSourceMembers
+              - quicksight:DescribeDataSourceHierarchy
+              - quicksight:DescribeTemplatePermissions
+              - quicksight:DescribeTemplateMembers
+              - quicksight:DescribeTemplateHierarchy
+              - quicksight:DescribeUserPermissions
+              - quicksight:DescribeUserMembers
+              - quicksight:DescribeUserHierarchy
+              - quicksight:DescribeGroupPermissions
+              - quicksight:DescribeGroupMembers
+              - quicksight:DescribeGroupHierarchy
+              - quicksight:DescribeNamespacePermissions
+              - quicksight:DescribeNamespaceMembers
+              - quicksight:DescribeNamespaceHierarchy
+              - quicksight:DescribeAccountSettingsPermissions
+              - quicksight:DescribeAccountSettingsMembers
+              - quicksight:DescribeAccountSettingsHierarchy
+            Resource: '*'
+
+  AttachQuickSightViewPolicy:
+    Type: 'AWS::IAM::UserPolicy'
+    Properties:
+      UserName: !Ref MyIAMUser
+      PolicyName: QuickSightViewPolicy
+      PolicyDocument: !GetAtt QuickSightViewPolicy.PolicyDocument
+
+  MyStackPolicy:
+    Type: 'AWS::CloudFormation::StackPolicy'
+    Properties:
+      StackPolicyBody:
+        Version: '2010-09-09'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt MyIAMUser.Arn
+            Action:
+              - 'cloudformation:CreateStack'
+              - 'cloudformation:UpdateStack'
+              - 'cloudformation:DeleteStack'
+              - 'cloudformation:DescribeStacks'
+              - 'cloudformation:GetTemplate'
+              - 'cloudformation:GetTemplateSummary'
+              - 'cloudformation:ListStackResources'
+              - 'cloudformation:DescribeStackEvents'
+              - 'cloudformation:DescribeStackResources'
+              - 'cloudformation:DescribeStackEvents'              
+            Resource: '*'
+
+Outputs:
+  UserArn:
+    Description: 'ARN of the IAM user'
+    Value: !GetAtt MyIAMUser.Arn
+  AccessKeyId:
+    Description: 'Access Key ID of the IAM user'
+    Value: !GetAtt MyAccessKey.AccessKeyId
+  SecretAccessKey:
+    Description: 'Secret Access Key of the IAM user'
+    Value: !GetAtt MyAccessKey.SecretAccessKey
