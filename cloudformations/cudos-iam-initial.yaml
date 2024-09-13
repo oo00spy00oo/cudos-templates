@@ -43,12 +43,13 @@ Resources:
                   - 'quicksight:List*'
                 Resource: '*'
 Outputs:
-  UserARN:
-    Value: !GetAtt MyIAMUser.Arn
-  RoleARN:
-    Value: !GetAtt MyIAMRole.Arn
   AccessKeyId:
     Value: !Ref MyAccessKey
   SecretAccessKey:
     Value: !GetAtt MyAccessKey.SecretAccessKey
+  UserARN:
+    Value: !GetAtt MyIAMUser.Arn
+  RoleARN:
+    Value: !GetAtt MyIAMRole.Arn
+
  
