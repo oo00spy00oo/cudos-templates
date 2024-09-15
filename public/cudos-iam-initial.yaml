@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  MyIAMUser:
+    Type: 'AWS::IAM::User'
+    Properties:
+      UserName: CUDOS-User
+
+  MyAccessKey:
+    Type: 'AWS::IAM::AccessKey'
+    Properties:
+      UserName: !Ref MyIAMUser
+
+  CUDOSRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: CUDOS-Role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CUDOSRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:CreateStack'
+                  - 'cloudformation:UpdateStack'
+                  - 'cloudformation:DescribeStacks'
+                  - 'cloudformation:DescribeStackEvents'
+                  - 'cloudformation:DescribeStackResources'
+                  - 'cloudformation:DescribeStackResource'
+                Resource: '*'
+
+  CUDOSUserPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: CUDOSUserPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Resource: !GetAtt CUDOSRole.Arn
+      Users:
+        - !Ref MyIAMUser
+
+Outputs:
+  AccessKeyId:
+    Value: !Ref MyAccessKey
+  SecretAccessKey:
+    Value: !GetAtt MyAccessKey.SecretAccessKey
+  UserARN:
+    Value: !GetAtt MyIAMUser.Arn
+  RoleARN:
+    Value: !GetAtt CUDOSRole.Arn
