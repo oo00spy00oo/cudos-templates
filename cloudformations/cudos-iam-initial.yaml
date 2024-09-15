@@ -4,44 +4,47 @@ Resources:
     Type: 'AWS::IAM::User'
     Properties:
       UserName: CUDOS-User
+
   MyAccessKey:
     Type: 'AWS::IAM::AccessKey'
     Properties:
       UserName: !Ref MyIAMUser
 
-  MyIAMRole:
+  CUDOSRole:
     Type: 'AWS::IAM::Role'
     Properties:
+      RoleName: CUDOS-Role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
               Service: cloudformation.amazonaws.com
-            Action: 'sts:AssumeRole'
+            Action: sts:AssumeRole
       Policies:
-        - PolicyName: CloudFormationPermissions
+        - PolicyName: CUDOSRolePolicy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
-                  - 'cloudformation:CreateStack'
-                  - 'cloudformation:DescribeStacks'
-                  - 'cloudformation:DescribeStackEvents'
-                  - 'cloudformation:DescribeStackResources'
-                  - 'cloudformation:DescribeStackResource'
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
                 Resource: '*'
-        - PolicyName: QuickSightPermissions
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'quicksight:Describe*'
-                  - 'quicksight:Get*'
-                  - 'quicksight:List*'
-                Resource: '*'
+
+  CUDOSUserPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: CUDOSUserPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Resource: !GetAtt CUDOSRole.Arn
+      Users:
+        - !Ref MyIAMUser
+
 Outputs:
   AccessKeyId:
     Value: !Ref MyAccessKey
@@ -50,6 +53,4 @@ Outputs:
   UserARN:
     Value: !GetAtt MyIAMUser.Arn
   RoleARN:
-    Value: !GetAtt MyIAMRole.Arn
-
- 
+    Value: !GetAtt CUDOSRole.Arn
