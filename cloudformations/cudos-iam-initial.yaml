@@ -28,8 +28,12 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - cloudformation:CreateStack
-                  - cloudformation:UpdateStack
+                  - 'cloudformation:CreateStack'
+                  - 'cloudformation:UpdateStack'
+                  - 'cloudformation:DescribeStacks'
+                  - 'cloudformation:DescribeStackEvents'
+                  - 'cloudformation:DescribeStackResources'
+                  - 'cloudformation:DescribeStackResource'
                 Resource: '*'
 
   CUDOSUserPolicy:
