@@ -78,6 +78,11 @@ Resources:
               - cloudformation:DescribeStackResources
               - cloudformation:ListStackResources
             Resource: "*"
+          
+          - Effect: Allow
+            Action:
+              - quicksight:DescribeAccountSettings
+            Resource: "*"
 
 Outputs:
   UserNameOutput:
