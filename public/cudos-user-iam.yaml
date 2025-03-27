@@ -23,6 +23,9 @@ Resources:
         Statement:
           - Effect: Allow
             Action:
+              - iam:GetUser
+          - Effect: Allow
+            Action:
               - quicksight:DescribeDashboard
               - quicksight:ListDashboards
               - quicksight:DescribeDataSet
