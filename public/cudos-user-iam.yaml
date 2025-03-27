@@ -1,11 +1,20 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CloudFormation template to create an IAM role with permissions to describe, view, and access details QuickSight dashboards.
+Description: CloudFormation template to create an IAM role with QuickSight permissions and an IAM user assigned to that role.
+
+Parameters:
+  UserName:
+    Type: String
+    Description: The name of the IAM user to create.
+
+  RoleName:
+    Type: String
+    Description: The name of the IAM role to be created.
 
 Resources:
-  QuickSightRole:
+  CudosIAMRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: CudosUserRole
+      RoleName: !Ref RoleName
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -33,7 +42,29 @@ Resources:
                   - quicksight:DescribeAnalysisPermissions
                 Resource: "*"
 
+  CudosIAMUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref UserName
+
+  CudosIAMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${UserName}-AssumeRolePolicy"
+      Users:
+        - !Ref CudosIAMUser
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Resource: !GetAtt CudosIAMRole.Arn
+
 Outputs:
-  QuickSightRoleArn:
-    Description: The ARN of the created QuickSight IAM role.
-    Value: !GetAtt QuickSightRole.Arn
+  CudosIAMUserArn:
+    Description: The ARN of the created IAM user.
+    Value: !GetAtt CudosIAMUser.Arn
+
+  CudosIAMRoleArn:
+    Description: The ARN of the created IAM role.
+    Value: !GetAtt CudosIAMRole.Arn
