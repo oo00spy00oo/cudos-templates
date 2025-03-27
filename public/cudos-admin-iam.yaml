@@ -103,6 +103,7 @@ Resources:
               - s3:PutLifecycleConfiguration
               - s3:PutBucketVersioning
               - s3:PutBucketPublicAccessBlock
+              - s3:PutBucketPolicy
             Resource: "*"
 
 Outputs:
