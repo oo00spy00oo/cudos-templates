@@ -43,7 +43,6 @@ Resources:
               - iam:ListUsers
               - iam:GetUser
               - iam:CreateUser
-              - iam:DeleteUser
               - iam:CreatePolicy
               - iam:DeletePolicy
               - iam:CreateRole
