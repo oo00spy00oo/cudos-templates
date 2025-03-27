@@ -123,6 +123,20 @@ Resources:
               - lambda:CreateEventSourceMapping
               - lambda:UpdateEventSourceMapping
             Resource: "*"
+          
+          - Effect: Allow
+            Action:
+              - 'states:CreateStateMachine'
+              - 'states:DescribeStateMachine'
+              - 'states:UpdateStateMachine'
+              - 'states:StartExecution'
+              - 'states:StopExecution'
+              - 'states:ListExecutions'
+              - 'states:DescribeExecution'
+              - 'states:ListStateMachines'
+              - 'states:TagResource'
+              - 'states:UntagResource'
+            Resource: '*'
 
 Outputs:
   UserNameOutput:
