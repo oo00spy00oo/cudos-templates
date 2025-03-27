@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to create an Admin IAM user and assign it to a specified role.
+
+Parameters:
+  UserName:
+    Type: String
+    Description: The name of the IAM user to create.
+
+  RoleName:
+    Type: String
+    Description: The name of the IAM role to be created.
+
+Resources:
+  CudosAdminIAMRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Ref RoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: "*"
+            Action: "sts:AssumeRole"
+      Description: A blank IAM role with no policies attached
+
+  CudosAdminIAMUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref UserName
+
+  CudosAdminIAMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${UserName}-Policy"
+      Users:
+        - !Ref CudosAdminIAMUser
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RoleName}"
+
+Outputs:
+  UserNameOutput:
+    Description: The name of the created IAM user.
+    Value: !Ref CudosAdminIAMUser
+
+  UserArnOutput:
+    Description: The ARN of the created IAM user.
+    Value: !GetAtt CudosAdminIAMUser.Arn
+
+  RoleArnOutput:
+    Description: The ARN of the created IAM Role.
+    Value: !GetAtt CudosAdminIAMRole.Arn
