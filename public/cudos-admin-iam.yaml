@@ -32,12 +32,31 @@ Resources:
   CudosAdminIAMPolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: !Sub "${UserName}-AssumeRolePolicy"
+      PolicyName: !Sub "${UserName}-AdminPolicy"
       Users:
         - !Ref CudosAdminIAMUser
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
+          - Effect: Allow
+            Action:
+              - iam:ListUsers
+              - iam:GetUser
+              - iam:CreateUser
+              - iam:DeleteUser
+              - iam:CreatePolicy
+              - iam:DeletePolicy
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:PassRole
+              - iam:ListRoles
+              - iam:GetRole
+              - iam:ListPolicies
+              - iam:GetPolicy
+            Resource: "*"
+
           - Effect: Allow
             Action: sts:AssumeRole
             Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RoleName}"
