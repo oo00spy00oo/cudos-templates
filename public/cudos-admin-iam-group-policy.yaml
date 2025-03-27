@@ -48,5 +48,23 @@ Resources:
               - cloudformation:DescribeStackResources
               - cloudformation:ListStackResources
             Resource: "*"
+          - Sid: LambdaPermissions
+            Effect: Allow
+            Action:
+              - lambda:ListFunctions
+              - lambda:GetFunction
+              - lambda:CreateFunction
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+              - lambda:InvokeFunction
+              - lambda:ListAliases
+              - lambda:GetAlias
+              - lambda:CreateAlias
+              - lambda:UpdateAlias
+              - lambda:ListEventSourceMappings
+              - lambda:GetEventSourceMapping
+              - lambda:CreateEventSourceMapping
+              - lambda:UpdateEventSourceMapping
+            Resource: "*"
       Groups: 
         - !Ref GroupName
