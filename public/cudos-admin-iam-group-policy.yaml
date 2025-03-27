@@ -17,25 +17,7 @@ Resources:
           - Sid: StateFunctionPermissions
             Effect: Allow
             Action: 
-              - states:ListStateMachineVersions
-              - states:DescribeActivity
-              - states:ListStateMachines
-              - states:DescribeStateMachine
-              - states:ListActivities
-              - states:ListExecutions
-              - states:DescribeStateMachineAlias
-              - states:UntagResource
-              - states:ValidateStateMachineDefinition
-              - states:TagResource
-              - states:DescribeStateMachineForExecution
-              - states:ListStateMachineAliases
-              - states:RevealSecrets
-              - states:DescribeExecution
-              - states:GetExecutionHistory
-              - states:DescribeMapRun
-              - states:ListMapRuns
-              - states:CreateStateMachine
-              - states:ListTagsForResource
+              - states:*
             Resource: '*'
           - Sid: CloudFormationPermissions
             Effect: Allow
