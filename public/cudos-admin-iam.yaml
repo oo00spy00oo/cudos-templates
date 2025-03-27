@@ -49,6 +49,7 @@ Resources:
               - iam:CreateRole
               - iam:DeleteRole
               - iam:GetUserPolicy
+              - iam:GetRolePolicy
               - iam:AttachUserPolicy
               - iam:ListUserPolicies
               - iam:ListAttachedUserPolicies
