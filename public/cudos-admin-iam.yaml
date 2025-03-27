@@ -101,6 +101,7 @@ Resources:
               - s3:ListBucketVersions
               - s3:PutEncryptionConfiguration
               - s3:PutLifecycleConfiguration
+              - s3:PutBucketVersioning
             Resource: "*"
 
 Outputs:
