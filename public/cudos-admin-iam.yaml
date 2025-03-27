@@ -86,6 +86,7 @@ Resources:
           
           - Effect: Allow
             Action:
+              - quicksight:*
               - quicksight:DescribeAccountSettings
               - quicksight:CreateAccountSubscription
             Resource: "*"
