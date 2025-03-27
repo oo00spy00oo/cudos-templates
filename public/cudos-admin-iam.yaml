@@ -45,6 +45,7 @@ Resources:
               - iam:CreateUser
               - iam:CreatePolicy
               - iam:DeletePolicy
+              - iam:PutRolePolicy
               - iam:CreateRole
               - iam:DeleteRole
               - iam:ListUserPolicies
