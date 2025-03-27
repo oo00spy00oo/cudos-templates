@@ -93,8 +93,6 @@ Resources:
               - quicksight:DeleteDashboard
               - quicksight:DeleteDataSet
               - quicksight:DeleteAnalysis
-              - quicksight:DeleteUser
-              - quicksight:DeleteGroup
               - quicksight:DeleteAccountSubscription
             Resource: "*"
 
