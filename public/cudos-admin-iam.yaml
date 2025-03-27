@@ -68,7 +68,12 @@ Resources:
             Action: sts:AssumeRole
             Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RoleName}"
           
-          
+          - Effect: Allow
+            Action:
+              - quicksight:DescribeAccountSettings
+              - quicksight:CreateAccountSubscription
+            Resource: "*"
+
 
 Outputs:
   UserNameOutput:
