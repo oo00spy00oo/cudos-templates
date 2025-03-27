@@ -1,10 +1,10 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CloudFormation template for assign policies to CUDOS-Admin group
+Description: CloudFormation template for assigning policies to CUDOS-Admin group
 
 Parameters:
   GroupName:
     Type: String
-    Description: The group name of the IAM role to be created.
+    Description: The group name of the IAM group to which the policy will be assigned.
 
 Resources:
   CudosIAMGroupPolicy:
@@ -86,6 +86,7 @@ Resources:
               - lambda:GetEventSourceMapping
               - lambda:CreateEventSourceMapping
               - lambda:UpdateEventSourceMapping
+            Resource: "*"
           - Sid: QuickSightPermissions
             Effect: Allow
             Action:
