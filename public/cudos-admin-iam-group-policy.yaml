@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for assign policies to CUDOS-Admin group
+
+Parameters:
+  GroupName:
+    Type: String
+    Description: The group name of the IAM role to be created.
+
+Resources:
+  CudosIAMGroupPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties: 
+      PolicyName: CudosIAMGroupPolicy
+      PolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Sid: StepFunctionPermissions
+            Effect: Allow
+            Action: 
+              - states:ListStateMachineVersions
+              - states:DescribeActivity
+              - states:ListStateMachines
+              - states:DescribeStateMachine
+              - states:ListActivities
+              - states:ListExecutions
+              - states:DescribeStateMachineAlias
+              - states:UntagResource
+              - states:ValidateStateMachineDefinition
+              - states:TagResource
+              - states:DescribeStateMachineForExecution
+              - states:ListStateMachineAliases
+              - states:RevealSecrets
+              - states:DescribeExecution
+              - states:GetExecutionHistory
+              - states:DescribeMapRun
+              - states:ListMapRuns
+              - states:CreateStateMachine
+              - states:ListTagsForResource
+            Resource: '*'
+          - Sid: CloudFormationPermissions
+            Effect: Allow
+            Action:
+              - cloudformation:CreateStack
+              - cloudformation:DeleteStack
+              - cloudformation:UpdateStack
+              - cloudformation:DescribeStacks
+              - cloudformation:ListStacks
+              - cloudformation:DescribeStackResources
+              - cloudformation:ListStackResources
+            Resource: "*"
+          - Sid: BucketPermissions
+            Effect: Allow
+            Action:
+              - s3:CreateBucket
+              - s3:ListBucket
+              - s3:GetBucketLocation
+              - s3:PutObject
+              - s3:GetObject
+              - s3:ListObjects
+              - s3:GetObjectVersion
+              - s3:ListBucketMultipartUploads
+              - s3:AbortMultipartUpload
+              - s3:PutObjectAcl
+              - s3:GetObjectAcl
+              - s3:ListBucketVersions
+              - s3:PutEncryptionConfiguration
+              - s3:PutLifecycleConfiguration
+              - s3:PutBucketVersioning
+              - s3:PutBucketPublicAccessBlock
+              - s3:PutBucketPolicy
+            Resource: "*"
+          - Sid: LambdaPermissions
+            Effect: Allow
+            Action:
+              - lambda:ListFunctions
+              - lambda:GetFunction
+              - lambda:CreateFunction
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+              - lambda:InvokeFunction
+              - lambda:ListAliases
+              - lambda:GetAlias
+              - lambda:CreateAlias
+              - lambda:UpdateAlias
+              - lambda:ListEventSourceMappings
+              - lambda:GetEventSourceMapping
+              - lambda:CreateEventSourceMapping
+              - lambda:UpdateEventSourceMapping
+          - Sid: QuickSightPermissions
+            Effect: Allow
+            Action:
+              - quicksight:DescribeAccountSettings
+              - quicksight:CreateAccountSubscription
+            Resource: "*"
+      Groups: 
+        - !Ref GroupName
