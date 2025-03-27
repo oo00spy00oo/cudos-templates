@@ -2,9 +2,9 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: CloudFormation template to create CudosStepFunctionPolicy
 
 Parameters:
-  UserName:
+  GroupName:
     Type: String
-    Description: The username of the IAM role to be created.
+    Description: The group name of the IAM role to be created.
 
 Resources:
   CudosStepFunctionPolicy:
@@ -37,5 +37,5 @@ Resources:
               - states:CreateStateMachine
               - states:ListTagsForResource
             Resource: '*'
-      Users: 
-        - !Ref UserName # Replace with your IAM role name
+      Groups: 
+        - !Ref GroupName # Replace with your IAM role name
