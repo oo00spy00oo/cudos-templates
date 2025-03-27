@@ -99,6 +99,7 @@ Resources:
               - s3:PutObjectAcl
               - s3:GetObjectAcl
               - s3:ListBucketVersions
+              - s3:PutEncryptionConfiguration
             Resource: "*"
 
 Outputs:
