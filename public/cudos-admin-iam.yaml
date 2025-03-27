@@ -87,8 +87,15 @@ Resources:
           - Effect: Allow
             Action:
               - quicksight:*
-              - quicksight:DescribeAccountSettings
-              - quicksight:CreateAccountSubscription
+            Resource: "*"
+          - Effect: Deny
+            Action:
+              - quicksight:DeleteDashboard
+              - quicksight:DeleteDataSet
+              - quicksight:DeleteAnalysis
+              - quicksight:DeleteUser
+              - quicksight:DeleteGroup
+              - quicksight:DeleteAccountSubscription
             Resource: "*"
 
 Outputs:
