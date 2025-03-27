@@ -1,10 +1,10 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CloudFormation template for assigning policies to CUDOS-Admin group
+Description: CloudFormation template
 
 Parameters:
   GroupName:
     Type: String
-    Description: The group name of the IAM group to which the policy will be assigned.
+    Description: The group name of the IAM role to be created.
 
 Resources:
   CudosIAMGroupPolicy:
@@ -14,7 +14,7 @@ Resources:
       PolicyDocument: 
         Version: '2012-10-17'
         Statement:
-          - Sid: StepFunctionPermissions
+          - Sid: StateFunctionPermissions
             Effect: Allow
             Action: 
               - states:ListStateMachineVersions
@@ -47,51 +47,6 @@ Resources:
               - cloudformation:ListStacks
               - cloudformation:DescribeStackResources
               - cloudformation:ListStackResources
-            Resource: "*"
-          - Sid: BucketPermissions
-            Effect: Allow
-            Action:
-              - s3:CreateBucket
-              - s3:ListBucket
-              - s3:GetBucketLocation
-              - s3:PutObject
-              - s3:GetObject
-              - s3:ListObjects
-              - s3:GetObjectVersion
-              - s3:ListBucketMultipartUploads
-              - s3:AbortMultipartUpload
-              - s3:PutObjectAcl
-              - s3:GetObjectAcl
-              - s3:ListBucketVersions
-              - s3:PutEncryptionConfiguration
-              - s3:PutLifecycleConfiguration
-              - s3:PutBucketVersioning
-              - s3:PutBucketPublicAccessBlock
-              - s3:PutBucketPolicy
-            Resource: "*"
-          - Sid: LambdaPermissions
-            Effect: Allow
-            Action:
-              - lambda:ListFunctions
-              - lambda:GetFunction
-              - lambda:CreateFunction
-              - lambda:UpdateFunctionCode
-              - lambda:UpdateFunctionConfiguration
-              - lambda:InvokeFunction
-              - lambda:ListAliases
-              - lambda:GetAlias
-              - lambda:CreateAlias
-              - lambda:UpdateAlias
-              - lambda:ListEventSourceMappings
-              - lambda:GetEventSourceMapping
-              - lambda:CreateEventSourceMapping
-              - lambda:UpdateEventSourceMapping
-            Resource: "*"
-          - Sid: QuickSightPermissions
-            Effect: Allow
-            Action:
-              - quicksight:DescribeAccountSettings
-              - quicksight:CreateAccountSubscription
             Resource: "*"
       Groups: 
         - !Ref GroupName
