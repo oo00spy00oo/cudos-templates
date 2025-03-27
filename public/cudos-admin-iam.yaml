@@ -85,6 +85,22 @@ Resources:
               - quicksight:CreateAccountSubscription
             Resource: "*"
 
+          - Effect: Allow
+            Action:
+              - s3:CreateBucket
+              - s3:ListBucket
+              - s3:GetBucketLocation
+              - s3:PutObject
+              - s3:GetObject
+              - s3:ListObjects
+              - s3:GetObjectVersion
+              - s3:ListBucketMultipartUploads
+              - s3:AbortMultipartUpload
+              - s3:PutObjectAcl
+              - s3:GetObjectAcl
+              - s3:ListBucketVersions
+            Resource: "*"
+
 Outputs:
   UserNameOutput:
     Description: The name of the created IAM user.
