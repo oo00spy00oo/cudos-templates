@@ -50,7 +50,7 @@ Resources:
   CudosIAMPolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: !Sub "${UserName}-AssumeRolePolicy"
+      PolicyName: !Sub "${UserName}-Policy"
       Users:
         - !Ref CudosIAMUser
       PolicyDocument:

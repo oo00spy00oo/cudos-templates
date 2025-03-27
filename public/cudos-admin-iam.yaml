@@ -32,7 +32,7 @@ Resources:
   CudosAdminIAMPolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: !Sub "${UserName}-AdminPolicy"
+      PolicyName: !Sub "${UserName}-Policy"
       Users:
         - !Ref CudosAdminIAMUser
       PolicyDocument:
