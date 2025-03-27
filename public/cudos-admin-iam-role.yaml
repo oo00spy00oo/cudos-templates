@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation Template to create a blank IAM Role with no policies attached
+
+Parameters:
+  RoleName:
+    Type: String
+    Description: The name of the IAM Role to be created
+
+Resources:
+  CudosAdminIAMRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Ref RoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: "*"
+            Action: "sts:AssumeRole"
+      Description: A blank IAM role with no policies attached
+
+Outputs:
+  RoleArn:
+    Description: The ARN of the created IAM Role
+    Value: !GetAtt CudosAdminIAMRole.Arn
