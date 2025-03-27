@@ -61,6 +61,17 @@ Resources:
             Action: sts:AssumeRole
             Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RoleName}"
 
+          - Effect: Allow
+            Action:
+              - cloudformation:CreateStack
+              - cloudformation:DeleteStack
+              - cloudformation:UpdateStack
+              - cloudformation:DescribeStacks
+              - cloudformation:ListStacks
+              - cloudformation:DescribeStackResources
+              - cloudformation:ListStackResources
+            Resource: "*"
+
 Outputs:
   UserNameOutput:
     Description: The name of the created IAM user.
