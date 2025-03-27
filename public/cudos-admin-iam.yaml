@@ -57,6 +57,7 @@ Resources:
               - iam:GetRole
               - iam:ListPolicies
               - iam:GetPolicy
+              - iam:ListAccessKeys
             Resource: "*"
 
           - Effect: Allow
