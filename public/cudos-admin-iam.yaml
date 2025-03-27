@@ -1,16 +1,25 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CloudFormation template to create an Admin IAM user and assign it to a specified role.
+Description: CloudFormation template to create an Admin IAM user, an IAM user group, and assign the user to the group.
 
 Parameters:
   UserName:
     Type: String
     Description: The name of the IAM user to create.
 
+  GroupName:
+    Type: String
+    Description: The name of the IAM user group to create.
+
   RoleName:
     Type: String
     Description: The name of the IAM role to be created.
 
 Resources:
+  CudosAdminIAMGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: !Ref GroupName
+
   CudosAdminIAMRole:
     Type: AWS::IAM::Role
     Properties: 
@@ -28,6 +37,13 @@ Resources:
     Type: AWS::IAM::User
     Properties:
       UserName: !Ref UserName
+
+  CudosAdminIAMUserToGroup:
+    Type: AWS::IAM::UserToGroupAddition
+    Properties:
+      GroupName: !Ref CudosAdminIAMGroup
+      Users:
+        - !Ref CudosAdminIAMUser
 
   CudosAdminIAMPolicy:
     Type: AWS::IAM::Policy
@@ -73,7 +89,6 @@ Resources:
               - quicksight:DescribeAccountSettings
               - quicksight:CreateAccountSubscription
             Resource: "*"
-
 
 Outputs:
   UserNameOutput:
