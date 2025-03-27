@@ -106,6 +106,24 @@ Resources:
               - s3:PutBucketPolicy
             Resource: "*"
 
+          - Effect: Allow
+            Action:
+              - lambda:ListFunctions
+              - lambda:GetFunction
+              - lambda:CreateFunction
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+              - lambda:InvokeFunction
+              - lambda:ListAliases
+              - lambda:GetAlias
+              - lambda:CreateAlias
+              - lambda:UpdateAlias
+              - lambda:ListEventSourceMappings
+              - lambda:GetEventSourceMapping
+              - lambda:CreateEventSourceMapping
+              - lambda:UpdateEventSourceMapping
+            Resource: "*"
+
 Outputs:
   UserNameOutput:
     Description: The name of the created IAM user.
