@@ -19,6 +19,7 @@ Resources:
             Action: 
               - states:*
             Resource: '*'
+
           - Sid: CloudFormationPermissions
             Effect: Allow
             Action:
@@ -30,44 +31,32 @@ Resources:
               - cloudformation:DescribeStackResources
               - cloudformation:ListStackResources
             Resource: "*"
+
           - Sid: S3Permissions
             Effect: Allow
-            Action:
-              - s3:CreateBucket
-              - s3:ListBucket
-              - s3:GetBucketLocation
-              - s3:PutObject
-              - s3:GetObject
-              - s3:ListObjects
-              - s3:GetObjectVersion
-              - s3:ListBucketMultipartUploads
-              - s3:AbortMultipartUpload
-              - s3:PutObjectAcl
-              - s3:GetObjectAcl
-              - s3:ListBucketVersions
-              - s3:PutEncryptionConfiguration
-              - s3:PutLifecycleConfiguration
-              - s3:PutBucketVersioning
-              - s3:PutBucketPublicAccessBlock
-              - s3:PutBucketPolicy
+            Action: 
+              - s3:*
             Resource: "*"
+          - Sid: DenyDeleteSPermissions
+            Effect: Deny
+            Action:
+              - s3:DeleteBucket
+              - s3:DeleteObject
+              - s3:DeleteObjectVersion
+              - s3:DeleteBucketPolicy
+            Resource: "*"
+
           - Sid: LambdaPermissions
             Effect: Allow
+            Action: 
+              - lambda:*
+            Resource: "*"
+          - Sid: DenyDeleteLambdaPermissions
+            Effect: Deny
             Action:
-              - lambda:ListFunctions
-              - lambda:GetFunction
-              - lambda:CreateFunction
-              - lambda:UpdateFunctionCode
-              - lambda:UpdateFunctionConfiguration
-              - lambda:InvokeFunction
-              - lambda:ListAliases
-              - lambda:GetAlias
-              - lambda:CreateAlias
-              - lambda:UpdateAlias
-              - lambda:ListEventSourceMappings
-              - lambda:GetEventSourceMapping
-              - lambda:CreateEventSourceMapping
-              - lambda:UpdateEventSourceMapping
+              - lambda:DeleteFunction
+              - lambda:DeleteAlias
+              - lambda:DeleteEventSourceMapping
             Resource: "*"
       Groups: 
         - !Ref GroupName
