@@ -82,6 +82,12 @@ Resources:
             Resource: "*"
 
           - Effect: Allow
+            Action:
+              - support:DescribeCases
+              - support:CreateCase
+            Resource: "*"
+
+          - Effect: Allow
             Action: sts:AssumeRole
             Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${RoleName}"
           
