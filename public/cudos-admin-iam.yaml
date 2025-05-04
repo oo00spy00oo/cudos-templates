@@ -79,6 +79,7 @@ Resources:
               - iam:PutUserPolicy
               - iam:ListAccessKeys
               - iam:CreateAccessKey
+              - iam:ListAttachedGroupPolicies
             Resource: "*"
 
           - Effect: Allow
