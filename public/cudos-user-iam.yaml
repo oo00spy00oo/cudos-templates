@@ -39,6 +39,7 @@ Resources:
               - quicksight:DescribeDashboardPermissions
               - quicksight:DescribeAnalysisPermissions
               - quicksight:RegisterUser
+              - quicksight:GenerateEmbedUrlForRegisteredUser
             Resource: "*"
 
 Outputs:
