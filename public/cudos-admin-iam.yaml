@@ -98,10 +98,16 @@ Resources:
             Resource: "*"
           - Effect: Deny
             Action:
-              - quicksight:DeleteDashboard
-              - quicksight:DeleteDataSet
-              - quicksight:DeleteAnalysis
-              - quicksight:DeleteAccountSubscription
+              - quicksight:Delete*
+            Resource: "*"
+
+          - Effect: Allow
+            Action:
+              - glue:*
+            Resource: "*"
+          - Effect: Deny
+            Action:
+              - glue:Delete*
             Resource: "*"
 
 Outputs:
