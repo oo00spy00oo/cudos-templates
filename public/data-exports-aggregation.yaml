@@ -1,5 +1,6 @@
+# https://github.com/awslabs/cid-data-collection-framework/blob/main/data-exports/deploy/data-exports-aggregation.yaml
 AWSTemplateFormatVersion: "2010-09-09"
-Description: AWS Billing Data Export Aggregation v0.1.0
+Description: AWS Billing Data Export Aggregation v0.10.0 - AWS Solution SO9011
 Metadata:
 
   AWS::CloudFormation::Interface:
@@ -13,6 +14,7 @@ Metadata:
           - ManageCUR2
           - ManageFOCUS
           - ManageCOH
+          - ManageCarbon
       -
         Label:
           default: "Parameters needed in Destination (Data Collection) Account only"
@@ -24,6 +26,9 @@ Metadata:
         Parameters:
           - EnableSCAD
           - RolePath
+          - CUR2TimeGranularity
+          - FOCUSTimeGranularity
+          - SecondaryDestinationBucket
 
     ParameterLabels:
       ManageCOH:
@@ -32,6 +37,8 @@ Metadata:
         default: "CUR 2.0"
       ManageFOCUS:
         default: "FOCUS"
+      ManageCarbon:
+        default: "Carbon Emissions"
       DestinationAccountId:
         default: "Destination (Data Collection) Account Id"
       ResourcePrefix:
@@ -40,6 +47,14 @@ Metadata:
         default: "Source Account Ids (Comma separated list)"
       EnableSCAD:
         default: "Enable Split Cost Allocation Data (SCAD) in CUR 2.0"
+      CUR2TimeGranularity:
+        default: "CUR 2.0 Granularity. Do not change."
+      FOCUSTimeGranularity:
+        default: "FOCUS Granularity. Do not change."
+      LakeFormationEnabled:
+        default: "I have LakeFormation permission model in place for this account & my CFN deployment credentials have administrative rights on LakeFormation"
+      SecondaryDestinationBucket:
+        default: "Secondary Destination Bucket Name. Keep it Empty."
 
 
 Parameters:
@@ -72,6 +87,11 @@ Parameters:
     Description:  "NOTE: you must have Cost Optimization Hub Enabled"
     AllowedValues: ['yes', 'no']
     Default: "no"
+  ManageCarbon:
+    Type: String
+    Description: ""
+    AllowedValues: ["yes", "no"]
+    Default: "no"
 
   ##
   # Destination specific params
@@ -92,62 +112,124 @@ Parameters:
     Default: "yes"
   RolePath:
     Type: String
-    Default: '/'
     Description: Path for roles where PermissionBoundaries can limit location
+    Default: '/'
+  CUR2TimeGranularity:
+    Type: String
+    Description: Changing of this parameter will require redeployment of this Stack, purging of data in Destination and then additional Backfill request. HOURLY is a recommended option unless your AWS invoice is more then $50M (in this case contact your TAM when installing).
+    Default: "HOURLY"
+    AllowedValues: ["HOURLY", "DAILY", "MONTHLY"]
+  FOCUSTimeGranularity:
+    Type: String
+    Description: Changing of this parameter will require redeployment of this Stack, purging of data in Destination and then additional Backfill request. HOURLY is a recommended option unless your AWS invoice is more then $50M (in this case contact your TAM when installing).
+    Default: "HOURLY"
+    AllowedValues: ["HOURLY", "DAILY", "MONTHLY"]
+  LakeFormationEnabled:
+    Type: String
+    Description: Choose 'yes' if Lake Formation permission model is in place for the account. If you are not sure, leave it as 'no'. You need to install cid-lakeformation-prerequisite.yaml first.
+    Default: "no"
+    AllowedValues: ["yes", "no"]
+  SecondaryDestinationBucket:
+    Type: String
+    Description: Leave Empty. A Bucket name for optional supplementary data replication. If not empty, the export data will be replicated to this bucket in addition to the default replication destination. Keep it empty if unsure.
+    Default: ''
+  AddScheduleForBlockingWrite:
+    Type: String
+    Description: 'Set yes to schedule Disabling/Enabling schedule to stop CUR replication for a short period of time to secure QuickSight Dataset refresh.'
+    Default: "no"
+    AllowedValues: ["yes", "no"]
+  DisableWriteCronSchedule:
+    Type: String
+    Description: 'Cron expression for disabling replication (UTC)'
+    Default: '0 1 * * ? *'
+    AllowedPattern: '^[0-9*,\-/\s?]+$'
+    ConstraintDescription: Must be a valid cron expression
+  EnableWriteCronSchedule:
+    Type: String
+    Description: 'Cron expression for enabling replication (UTC)'
+    Default: '0 3 * * ? *'
+    AllowedPattern: '^[0-9*,\-/\s?]+$'
+    ConstraintDescription: Must be a valid cron expression
 
 Conditions:
   EmptySourceAccountIds: !Equals [ !Ref SourceAccountIds, '']
   IsDestinationAccount: !Equals [!Ref DestinationAccountId, !Ref 'AWS::AccountId']
+  NonEmptySecondaryDestinationBucket: !Not [ !Equals [ !Ref SecondaryDestinationBucket, ''] ]
   IsSourceAccount:
     # it is Source account if it is not a destination or if it is a destination and it is listed in Source Accounts (as the list one).
     # Unfortunately, there no 'Fn::Contains' in Conditions, so we need to request user setting Dest account as the first.
     Fn::Or:
       - !Not [!Condition IsDestinationAccount]
       - !Equals [!Ref 'AWS::AccountId', !Select [0, !Split [',', !Sub '${SourceAccountIds},']]]
-  RegionSupportsDataExportsViaCFN: # CFN supports DataExports only in us-east-1 and cn-northwest-1. Other regions must use lambda.
+  RegionSupportsDataExportsViaCFN: # CFN supports DataExports only in several regions. Other regions must use lambda.
     Fn::Or:
       - !Equals [!Ref 'AWS::Region', 'us-east-1']
       - !Equals [!Ref 'AWS::Region', 'cn-northwest-1']
+      - !Equals [!Ref 'AWS::Region', 'us-iso-east-1']
+      - !Equals [!Ref 'AWS::Region', 'us-iso-west-1']
   ManageCUR2: !Equals [!Ref ManageCUR2, 'yes']
   ManageFOCUS: !Equals [!Ref ManageFOCUS, 'yes']
   ManageCOH: !Equals [!Ref ManageCOH, 'yes']
+  ManageCarbon: !Equals [!Ref ManageCarbon, "yes"]
   EnableSCAD: !Equals [!Ref EnableSCAD, 'yes']
   DeployDataExport:
     Fn::Or:
       - !Condition ManageCUR2
       - !Condition ManageFOCUS
       - !Condition ManageCOH
+      - !Condition ManageCarbon
+  DeploySourceS3:
+    Fn::And:
+      - !Condition IsSourceAccount
+      - !Condition DeployDataExport
   DeployCOHServiceRole:  !And [!Condition IsSourceAccount, !Condition ManageCOH]
   DeployCUR2ViaCFN:      !And [!Condition IsSourceAccount, !Condition ManageCUR2,        !Condition RegionSupportsDataExportsViaCFN]
   DeployFOCUSViaCFN:     !And [!Condition IsSourceAccount, !Condition ManageFOCUS,       !Condition RegionSupportsDataExportsViaCFN]
   DeployCOHViaCFN:       !And [!Condition IsSourceAccount, !Condition ManageCOH,         !Condition RegionSupportsDataExportsViaCFN]
-  DeployCUR2ViaLambda:   !And [!Condition IsSourceAccount, !Condition ManageCUR2,  !Not [!Condition RegionSupportsDataExportsViaCFN]]
-  DeployFOCUSViaLambda:  !And [!Condition IsSourceAccount, !Condition ManageFOCUS, !Not [!Condition RegionSupportsDataExportsViaCFN]]
-  DeployCOHViaLambda:   !And [!Condition IsSourceAccount, !Condition ManageCOH,    !Not [!Condition RegionSupportsDataExportsViaCFN]]
+  DeployCarbonViaCFN:    !And [!Condition IsSourceAccount, !Condition ManageCarbon,      !Condition RegionSupportsDataExportsViaCFN]
+  DeployCUR2ViaLambda:   !And [!Condition IsSourceAccount, !Condition ManageCUR2,   !Not [!Condition RegionSupportsDataExportsViaCFN]]
+  DeployFOCUSViaLambda:  !And [!Condition IsSourceAccount, !Condition ManageFOCUS,  !Not [!Condition RegionSupportsDataExportsViaCFN]]
+  DeployCOHViaLambda:    !And [!Condition IsSourceAccount, !Condition ManageCOH,    !Not [!Condition RegionSupportsDataExportsViaCFN]]
+  DeployCarbonViaLambda: !And [!Condition IsSourceAccount, !Condition ManageCarbon, !Not [!Condition RegionSupportsDataExportsViaCFN]]
   DeployCUR2Table:       !And [!Condition IsDestinationAccount, !Condition ManageCUR2]
   DeployFOCUSTable:      !And [!Condition IsDestinationAccount, !Condition ManageFOCUS]
   DeployCOHTable:        !And [!Condition IsDestinationAccount, !Condition ManageCOH]
-  DeployAnyExportViaLambda: !Or [!Condition DeployCUR2ViaLambda, !Condition DeployFOCUSViaLambda, !Condition DeployCOHViaLambda]
-  DeployAnyTable: !Or [!Condition DeployFOCUSTable, !Condition DeployCUR2Table, !Condition DeployCOHTable]
+  DeployCarbonTable:     !And [!Condition IsDestinationAccount, !Condition ManageCarbon]
+  DeployAnyExportViaLambda: !Or [!Condition DeployCUR2ViaLambda, !Condition DeployFOCUSViaLambda, !Condition DeployCOHViaLambda, !Condition DeployCarbonViaLambda]
+  DeployAnyTable: !Or [!Condition DeployFOCUSTable, !Condition DeployCUR2Table, !Condition DeployCOHTable, !Condition DeployCarbonTable]
+
+  NeedLakeFormationEnabledDB: !And [ !Equals [ !Ref LakeFormationEnabled, "yes"], !Condition DeployAnyTable]
+  NeedLakeFormationEnabledCOH:    !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCOH]
+  NeedLakeFormationEnabledCUR2:   !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCUR2]
+  NeedLakeFormationEnabledFOCUS:  !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageFOCUS]
+  NeedLakeFormationEnabledCarbon: !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCarbon]
+  DeployWriteBlocker:
+    Fn::And:
+      - !Condition IsDestinationAccount
+      - !Equals [!Ref AddScheduleForBlockingWrite, "yes"]
 
 Mappings:
   DataExports:
     #Mappings for storing values for different Data Exports tables
     CUR2:
       DefaultQuery: >-
-        SELECT bill_bill_type, bill_billing_entity, bill_billing_period_end_date, bill_billing_period_start_date, bill_invoice_id, bill_invoicing_entity, bill_payer_account_id, bill_payer_account_name, cost_category, discount, discount_bundled_discount, discount_total_discount, identity_line_item_id, identity_time_interval, line_item_availability_zone, line_item_blended_cost, line_item_blended_rate, line_item_currency_code, line_item_legal_entity, line_item_line_item_description, line_item_line_item_type, line_item_net_unblended_cost, line_item_net_unblended_rate, line_item_normalization_factor, line_item_normalized_usage_amount, line_item_operation, line_item_product_code, line_item_resource_id, line_item_tax_type, line_item_unblended_cost, line_item_unblended_rate, line_item_usage_account_id, line_item_usage_account_name, line_item_usage_amount, line_item_usage_end_date, line_item_usage_start_date, line_item_usage_type, pricing_currency, pricing_lease_contract_length, pricing_offering_class, pricing_public_on_demand_cost, pricing_public_on_demand_rate, pricing_purchase_option, pricing_rate_code, pricing_rate_id, pricing_term, pricing_unit, product, product_comment, product_fee_code, product_fee_description, product_from_location, product_from_location_type, product_from_region_code, product_instance_family, product_instance_type, product_instancesku, product_location, product_location_type, product_operation, product_pricing_unit, product_product_family, product_region_code, product_servicecode, product_sku, product_to_location, product_to_location_type, product_to_region_code, product_usagetype, reservation_amortized_upfront_cost_for_usage, reservation_amortized_upfront_fee_for_billing_period, reservation_availability_zone, reservation_effective_cost, reservation_end_time, reservation_modification_status, reservation_net_amortized_upfront_cost_for_usage, reservation_net_amortized_upfront_fee_for_billing_period, reservation_net_effective_cost, reservation_net_recurring_fee_for_usage, reservation_net_unused_amortized_upfront_fee_for_billing_period, reservation_net_unused_recurring_fee, reservation_net_upfront_value, reservation_normalized_units_per_reservation, reservation_number_of_reservations, reservation_recurring_fee_for_usage, reservation_reservation_a_r_n, reservation_start_time, reservation_subscription_id, reservation_total_reserved_normalized_units, reservation_total_reserved_units, reservation_units_per_reservation, reservation_unused_amortized_upfront_fee_for_billing_period, reservation_unused_normalized_unit_quantity, reservation_unused_quantity, reservation_unused_recurring_fee, reservation_upfront_value, resource_tags, savings_plan_amortized_upfront_commitment_for_billing_period, savings_plan_end_time, savings_plan_instance_type_family, savings_plan_net_amortized_upfront_commitment_for_billing_period, savings_plan_net_recurring_commitment_for_billing_period, savings_plan_net_savings_plan_effective_cost, savings_plan_offering_type, savings_plan_payment_option, savings_plan_purchase_term, savings_plan_recurring_commitment_for_billing_period, savings_plan_region, savings_plan_savings_plan_a_r_n, savings_plan_savings_plan_effective_cost, savings_plan_savings_plan_rate, savings_plan_start_time, savings_plan_total_commitment_to_date, savings_plan_used_commitment 
+        SELECT bill_bill_type, bill_billing_entity, bill_billing_period_end_date, bill_billing_period_start_date, bill_invoice_id, bill_invoicing_entity, bill_payer_account_id, bill_payer_account_name, cost_category, discount, discount_bundled_discount, discount_total_discount, identity_line_item_id, identity_time_interval, line_item_availability_zone, line_item_blended_cost, line_item_blended_rate, line_item_currency_code, line_item_legal_entity, line_item_line_item_description, line_item_line_item_type, line_item_net_unblended_cost, line_item_net_unblended_rate, line_item_normalization_factor, line_item_normalized_usage_amount, line_item_operation, line_item_product_code, line_item_resource_id, line_item_tax_type, line_item_unblended_cost, line_item_unblended_rate, line_item_usage_account_id, line_item_usage_account_name, line_item_usage_amount, line_item_usage_end_date, line_item_usage_start_date, line_item_usage_type, pricing_currency, pricing_lease_contract_length, pricing_offering_class, pricing_public_on_demand_cost, pricing_public_on_demand_rate, pricing_purchase_option, pricing_rate_code, pricing_rate_id, pricing_term, pricing_unit, product, product_comment, product_fee_code, product_fee_description, product_from_location, product_from_location_type, product_from_region_code, product_instance_family, product_instance_type, product_instancesku, product_location, product_location_type, product_operation, product_pricing_unit, product_product_family, product_region_code, product_servicecode, product_sku, product_to_location, product_to_location_type, product_to_region_code, product_usagetype, reservation_amortized_upfront_cost_for_usage, reservation_amortized_upfront_fee_for_billing_period, reservation_availability_zone, reservation_effective_cost, reservation_end_time, reservation_modification_status, reservation_net_amortized_upfront_cost_for_usage, reservation_net_amortized_upfront_fee_for_billing_period, reservation_net_effective_cost, reservation_net_recurring_fee_for_usage, reservation_net_unused_amortized_upfront_fee_for_billing_period, reservation_net_unused_recurring_fee, reservation_net_upfront_value, reservation_normalized_units_per_reservation, reservation_number_of_reservations, reservation_recurring_fee_for_usage, reservation_reservation_a_r_n, reservation_start_time, reservation_subscription_id, reservation_total_reserved_normalized_units, reservation_total_reserved_units, reservation_units_per_reservation, reservation_unused_amortized_upfront_fee_for_billing_period, reservation_unused_normalized_unit_quantity, reservation_unused_quantity, reservation_unused_recurring_fee, reservation_upfront_value, resource_tags, savings_plan_amortized_upfront_commitment_for_billing_period, savings_plan_end_time, savings_plan_instance_type_family, savings_plan_net_amortized_upfront_commitment_for_billing_period, savings_plan_net_recurring_commitment_for_billing_period, savings_plan_net_savings_plan_effective_cost, savings_plan_offering_type, savings_plan_payment_option, savings_plan_purchase_term, savings_plan_recurring_commitment_for_billing_period, savings_plan_region, savings_plan_savings_plan_a_r_n, savings_plan_savings_plan_effective_cost, savings_plan_savings_plan_rate, savings_plan_start_time, savings_plan_total_commitment_to_date, savings_plan_used_commitment, tags
         FROM COST_AND_USAGE_REPORT
       SCADQuery: >-
-        SELECT bill_bill_type, bill_billing_entity, bill_billing_period_end_date, bill_billing_period_start_date, bill_invoice_id, bill_invoicing_entity, bill_payer_account_id, bill_payer_account_name, cost_category, discount, discount_bundled_discount, discount_total_discount, identity_line_item_id, identity_time_interval, line_item_availability_zone, line_item_blended_cost, line_item_blended_rate, line_item_currency_code, line_item_legal_entity, line_item_line_item_description, line_item_line_item_type, line_item_net_unblended_cost, line_item_net_unblended_rate, line_item_normalization_factor, line_item_normalized_usage_amount, line_item_operation, line_item_product_code, line_item_resource_id, line_item_tax_type, line_item_unblended_cost, line_item_unblended_rate, line_item_usage_account_id, line_item_usage_account_name, line_item_usage_amount, line_item_usage_end_date, line_item_usage_start_date, line_item_usage_type, pricing_currency, pricing_lease_contract_length, pricing_offering_class, pricing_public_on_demand_cost, pricing_public_on_demand_rate, pricing_purchase_option, pricing_rate_code, pricing_rate_id, pricing_term, pricing_unit, product, product_comment, product_fee_code, product_fee_description, product_from_location, product_from_location_type, product_from_region_code, product_instance_family, product_instance_type, product_instancesku, product_location, product_location_type, product_operation, product_pricing_unit, product_product_family, product_region_code, product_servicecode, product_sku, product_to_location, product_to_location_type, product_to_region_code, product_usagetype, reservation_amortized_upfront_cost_for_usage, reservation_amortized_upfront_fee_for_billing_period, reservation_availability_zone, reservation_effective_cost, reservation_end_time, reservation_modification_status, reservation_net_amortized_upfront_cost_for_usage, reservation_net_amortized_upfront_fee_for_billing_period, reservation_net_effective_cost, reservation_net_recurring_fee_for_usage, reservation_net_unused_amortized_upfront_fee_for_billing_period, reservation_net_unused_recurring_fee, reservation_net_upfront_value, reservation_normalized_units_per_reservation, reservation_number_of_reservations, reservation_recurring_fee_for_usage, reservation_reservation_a_r_n, reservation_start_time, reservation_subscription_id, reservation_total_reserved_normalized_units, reservation_total_reserved_units, reservation_units_per_reservation, reservation_unused_amortized_upfront_fee_for_billing_period, reservation_unused_normalized_unit_quantity, reservation_unused_quantity, reservation_unused_recurring_fee, reservation_upfront_value, resource_tags, savings_plan_amortized_upfront_commitment_for_billing_period, savings_plan_end_time, savings_plan_instance_type_family, savings_plan_net_amortized_upfront_commitment_for_billing_period, savings_plan_net_recurring_commitment_for_billing_period, savings_plan_net_savings_plan_effective_cost, savings_plan_offering_type, savings_plan_payment_option, savings_plan_purchase_term, savings_plan_recurring_commitment_for_billing_period, savings_plan_region, savings_plan_savings_plan_a_r_n, savings_plan_savings_plan_effective_cost, savings_plan_savings_plan_rate, savings_plan_start_time, savings_plan_total_commitment_to_date, savings_plan_used_commitment, split_line_item_actual_usage, split_line_item_net_split_cost, split_line_item_net_unused_cost, split_line_item_parent_resource_id, split_line_item_public_on_demand_split_cost, split_line_item_public_on_demand_unused_cost, split_line_item_reserved_usage, split_line_item_split_cost, split_line_item_split_usage, split_line_item_split_usage_ratio, split_line_item_unused_cost    
+        SELECT bill_bill_type, bill_billing_entity, bill_billing_period_end_date, bill_billing_period_start_date, bill_invoice_id, bill_invoicing_entity, bill_payer_account_id, bill_payer_account_name, cost_category, discount, discount_bundled_discount, discount_total_discount, identity_line_item_id, identity_time_interval, line_item_availability_zone, line_item_blended_cost, line_item_blended_rate, line_item_currency_code, line_item_legal_entity, line_item_line_item_description, line_item_line_item_type, line_item_net_unblended_cost, line_item_net_unblended_rate, line_item_normalization_factor, line_item_normalized_usage_amount, line_item_operation, line_item_product_code, line_item_resource_id, line_item_tax_type, line_item_unblended_cost, line_item_unblended_rate, line_item_usage_account_id, line_item_usage_account_name, line_item_usage_amount, line_item_usage_end_date, line_item_usage_start_date, line_item_usage_type, pricing_currency, pricing_lease_contract_length, pricing_offering_class, pricing_public_on_demand_cost, pricing_public_on_demand_rate, pricing_purchase_option, pricing_rate_code, pricing_rate_id, pricing_term, pricing_unit, product, product_comment, product_fee_code, product_fee_description, product_from_location, product_from_location_type, product_from_region_code, product_instance_family, product_instance_type, product_instancesku, product_location, product_location_type, product_operation, product_pricing_unit, product_product_family, product_region_code, product_servicecode, product_sku, product_to_location, product_to_location_type, product_to_region_code, product_usagetype, reservation_amortized_upfront_cost_for_usage, reservation_amortized_upfront_fee_for_billing_period, reservation_availability_zone, reservation_effective_cost, reservation_end_time, reservation_modification_status, reservation_net_amortized_upfront_cost_for_usage, reservation_net_amortized_upfront_fee_for_billing_period, reservation_net_effective_cost, reservation_net_recurring_fee_for_usage, reservation_net_unused_amortized_upfront_fee_for_billing_period, reservation_net_unused_recurring_fee, reservation_net_upfront_value, reservation_normalized_units_per_reservation, reservation_number_of_reservations, reservation_recurring_fee_for_usage, reservation_reservation_a_r_n, reservation_start_time, reservation_subscription_id, reservation_total_reserved_normalized_units, reservation_total_reserved_units, reservation_units_per_reservation, reservation_unused_amortized_upfront_fee_for_billing_period, reservation_unused_normalized_unit_quantity, reservation_unused_quantity, reservation_unused_recurring_fee, reservation_upfront_value, resource_tags, savings_plan_amortized_upfront_commitment_for_billing_period, savings_plan_end_time, savings_plan_instance_type_family, savings_plan_net_amortized_upfront_commitment_for_billing_period, savings_plan_net_recurring_commitment_for_billing_period, savings_plan_net_savings_plan_effective_cost, savings_plan_offering_type, savings_plan_payment_option, savings_plan_purchase_term, savings_plan_recurring_commitment_for_billing_period, savings_plan_region, savings_plan_savings_plan_a_r_n, savings_plan_savings_plan_effective_cost, savings_plan_savings_plan_rate, savings_plan_start_time, savings_plan_total_commitment_to_date, savings_plan_used_commitment, split_line_item_actual_usage, split_line_item_net_split_cost, split_line_item_net_unused_cost, split_line_item_parent_resource_id, split_line_item_public_on_demand_split_cost, split_line_item_public_on_demand_unused_cost, split_line_item_reserved_usage, split_line_item_split_cost, split_line_item_split_usage, split_line_item_split_usage_ratio, split_line_item_unused_cost, tags
         FROM COST_AND_USAGE_REPORT
     FOCUS:
       DefaultQuery: >-
-        SELECT AvailabilityZone, BilledCost, BillingAccountId, BillingAccountName, BillingCurrency, BillingPeriodEnd, BillingPeriodStart, ChargeCategory, ChargeClass, ChargeDescription, ChargeFrequency, ChargePeriodEnd, ChargePeriodStart, CommitmentDiscountCategory, CommitmentDiscountId, CommitmentDiscountName, CommitmentDiscountType, CommitmentDiscountStatus, ConsumedQuantity, ConsumedUnit, ContractedCost, ContractedUnitPrice, EffectiveCost, InvoiceIssuerName, ListCost, ListUnitPrice, PricingCategory, PricingQuantity, PricingUnit, ProviderName, PublisherName, RegionId, RegionName, ResourceId, ResourceName, ResourceType, ServiceCategory, ServiceName, SkuId, SkuPriceId, SubAccountId, SubAccountName, Tags, x_CostCategories, x_Discounts, x_Operation, x_ServiceCode, x_UsageType
-        FROM FOCUS_1_0_AWS_PREVIEW
+        SELECT AvailabilityZone, BilledCost, BillingAccountId, BillingAccountName, BillingAccountType, BillingCurrency, BillingPeriodEnd, BillingPeriodStart, CapacityReservationId, CapacityReservationStatus, ChargeCategory, ChargeClass, ChargeDescription, ChargeFrequency, ChargePeriodEnd, ChargePeriodStart, CommitmentDiscountCategory, CommitmentDiscountId, CommitmentDiscountName, CommitmentDiscountQuantity, CommitmentDiscountType, CommitmentDiscountUnit, CommitmentDiscountStatus, ConsumedQuantity, ConsumedUnit, ContractedCost, ContractedUnitPrice, EffectiveCost, InvoiceId, InvoiceIssuerName, ListCost, ListUnitPrice, PricingCategory, PricingCurrency, PricingCurrencyContractedUnitPrice, PricingCurrencyEffectiveCost, PricingCurrencyListUnitPrice, PricingQuantity, PricingUnit, ProviderName, PublisherName, RegionId, RegionName, ResourceId, ResourceName, ResourceType, ServiceCategory, ServiceName, ServiceSubcategory, SkuId, SkuMeter, SkuPriceId, SkuPriceDetails, SubAccountId, SubAccountName, SubAccountType, Tags, x_Discounts, x_Operation, x_ServiceCode
+        FROM FOCUS_1_2_AWS
     COH:
       DefaultQuery: >-
         SELECT account_id, action_type, currency_code, current_resource_details, current_resource_summary, current_resource_type, estimated_monthly_cost_after_discount, estimated_monthly_cost_before_discount, estimated_monthly_savings_after_discount, estimated_monthly_savings_before_discount, estimated_savings_percentage_after_discount, estimated_savings_percentage_before_discount, implementation_effort, last_refresh_timestamp, recommendation_id, recommendation_lookback_period_in_days, recommendation_source, recommended_resource_details, recommended_resource_summary, recommended_resource_type, region, resource_arn, restart_needed, rollback_possible, tags
         FROM COST_OPTIMIZATION_RECOMMENDATIONS
+    Carbon:
+      DefaultQuery: >-
+        SELECT last_refresh_timestamp, location, model_version, payer_account_id, product_code, region_code, total_mbm_emissions_unit, total_mbm_emissions_value, total_lbm_emissions_unit, total_lbm_emissions_value, total_scope_1_emissions_unit, total_scope_1_emissions_value, total_scope_2_lbm_emissions_unit, total_scope_2_lbm_emissions_value, total_scope_2_mbm_emissions_unit, total_scope_2_mbm_emissions_value, total_scope_3_lbm_emissions_unit, total_scope_3_lbm_emissions_value, total_scope_3_mbm_emissions_unit, total_scope_3_mbm_emissions_value, usage_account_id, usage_period_end, usage_period_start
+        FROM CARBON_EMISSIONS
 
 Resources:
 
@@ -191,7 +273,12 @@ Resources:
         Rules:
           - Id: Object&Version Expiration
             Status: Enabled
-            NoncurrentVersionExpirationInDays: 32 # 1 month
+            NoncurrentVersionExpirationInDays: 1
+          - Id: DeleteIncompleteMultipartUploadsAndExpiredDeleteMarkers
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+            ExpiredObjectDeleteMarker: true
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -263,7 +350,7 @@ Resources:
 
   SourceS3:
     Type: AWS::S3::Bucket
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
@@ -299,26 +386,108 @@ Resources:
               Bucket: !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports"
               StorageClass: STANDARD
             Id: ReplicateCUR2Data
-            Prefix: !Sub "cur2/${AWS::AccountId}/${ResourcePrefix}-cur2/data/"  # Hardcoded export name
+            Filter:
+              Prefix: !Sub "cur2/${AWS::AccountId}/${ResourcePrefix}-cur2/data/"  # Hardcoded export name
             Status: Enabled
+            Priority: 1
+            DeleteMarkerReplication:
+              Status: Enabled
           - Destination:
               Bucket: !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports"
               StorageClass: STANDARD
             Id: ReplicateFOCUSData
-            Prefix: !Sub "focus/${AWS::AccountId}/${ResourcePrefix}-focus/data/" # Hardcoded export name
+            Filter:
+              Prefix: !Sub "focus/${AWS::AccountId}/${ResourcePrefix}-focus/data/" # Hardcoded export name
             Status: Enabled
+            Priority: 2
+            DeleteMarkerReplication:
+              Status: Enabled
           - Destination:
               Bucket: !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports"
               StorageClass: STANDARD
             Id: ReplicateCOHData
-            Prefix: !Sub "coh/${AWS::AccountId}/${ResourcePrefix}-coh/data/" # Hardcoded export name
+            Filter:
+              Prefix: !Sub "coh/${AWS::AccountId}/${ResourcePrefix}-coh/data/" # Hardcoded export name
             Status: Enabled
+            Priority: 3
+            DeleteMarkerReplication:
+              Status: Enabled
+          - Destination:
+              Bucket: !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports"
+              StorageClass: STANDARD
+            Id: ReplicateCarbonData
+            Filter:
+              Prefix: !Sub "carbon/${AWS::AccountId}/${ResourcePrefix}-carbon/data/" # Hardcoded export name
+            Status: Enabled
+            Priority: 4
+            DeleteMarkerReplication:
+              Status: Enabled
+          - Fn::If:
+            - NonEmptySecondaryDestinationBucket
+            - Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                StorageClass: STANDARD
+              Id: ReplicateCUR2DataToSecondaryBucket
+              Filter:
+                Prefix: !Sub "cur2/${AWS::AccountId}/${ResourcePrefix}-cur2/data/"  # Hardcoded export name
+              Status: Enabled
+              Priority: 101
+              DeleteMarkerReplication:
+                Status: Enabled
+            - !Ref 'AWS::NoValue'
+          - Fn::If:
+            - NonEmptySecondaryDestinationBucket
+            - Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                StorageClass: STANDARD
+              Id: ReplicateFOCUSDataToSecondaryBucket
+              Filter:
+                Prefix: !Sub "focus/${AWS::AccountId}/${ResourcePrefix}-focus/data/" # Hardcoded export name
+              Status: Enabled
+              Priority: 102
+              DeleteMarkerReplication:
+                Status: Enabled
+            - !Ref 'AWS::NoValue'
+          - Fn::If:
+            - NonEmptySecondaryDestinationBucket
+            - Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                StorageClass: STANDARD
+              Id: ReplicateCOHDataToSecondaryBucket
+              Filter:
+                Prefix: !Sub "coh/${AWS::AccountId}/${ResourcePrefix}-coh/data/" # Hardcoded export name
+              Status: Enabled
+              Priority: 103
+              DeleteMarkerReplication:
+                Status: Enabled
+            - !Ref 'AWS::NoValue'
+          - Fn::If:
+            - NonEmptySecondaryDestinationBucket
+            - Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                StorageClass: STANDARD
+              Id: ReplicateCarbonDataToSecondaryBucket
+              Filter:
+                Prefix: !Sub "carbon/${AWS::AccountId}/${ResourcePrefix}-carbon/data/" # Hardcoded export name
+              Status: Enabled
+              Priority: 104
+              DeleteMarkerReplication:
+                Status: Enabled
+            - !Ref "AWS::NoValue"
       LifecycleConfiguration:
         Rules:
           - Id: Object&Version Expiration
             Status: Enabled
-            NoncurrentVersionExpirationInDays: 32 # 1 month
-            ExpirationInDays: 64 # 2 months
+            NoncurrentVersionExpirationInDays: 1
+            ExpirationInDays: 7
+          - Id: DeleteIncompleteMultipartUploadsAndExpiredDeleteMarkers
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+            ExpiredObjectDeleteMarker: true
+      Tags: # Hacky way to manage conditional dependencies
+        - Key: IgnoreConditionalDependency
+          Value: !If [IsDestinationAccount, !Ref DestinationS3, '']
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -331,7 +500,7 @@ Resources:
 
   SourceS3BucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
@@ -376,7 +545,7 @@ Resources:
                 aws:SourceAccount: !Ref AWS::AccountId
 
   ReplicationRole:
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     Type: AWS::IAM::Role
     Properties:
       Path: !Sub /${ResourcePrefix}/
@@ -411,7 +580,121 @@ Resources:
                   - s3:ReplicateObject
                   - s3:ReplicateDelete
                   - s3:ReplicateTags
-                Resource: !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports/*/${AWS::AccountId}/*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports/*/${AWS::AccountId}/*"
+                  - !If [NonEmptySecondaryDestinationBucket, !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}/*/${AWS::AccountId}/*", !Ref 'AWS::NoValue']
+
+  BucketWriteBlockerLambdaRole:
+    Type: AWS::IAM::Role
+    Condition: DeployWriteBlocker
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BucketPolicyAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketPolicy
+                  - s3:PutBucketPolicy
+                Resource: !GetAtt DestinationS3.Arn
+
+  BucketWriteBlockerPolicyLambda:
+    Type: AWS::Lambda::Function
+    Condition: DeployWriteBlocker
+    Properties:
+      Runtime: python3.13
+      Handler: index.lambda_handler
+      FunctionName: !Sub ${ResourcePrefix}-CID-WriteBlocker
+      Role: !GetAtt BucketWriteBlockerLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import boto3
+
+          POLICY_SID = os.environ['POLICY_SID']
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+          s3 = boto3.client('s3')
+
+          def lambda_handler(event, context):
+              action = event.get('action', 'enable')  # 'enable' or 'disable'
+              try:
+                  policy = json.loads(s3.get_bucket_policy(Bucket=BUCKET_NAME)['Policy'])
+                  # Find and modify the policy statement
+                  for statement in policy['Statement']:
+                      if statement.get('Sid') == POLICY_SID:
+                          statement['Effect'] = 'Allow' if action == 'enable' else 'Deny'
+                          break
+                  else:
+                      raise Exception(f'{POLICY_SID} statement not found in policy')
+                  s3.put_bucket_policy(Bucket=BUCKET_NAME, Policy=json.dumps(policy))
+                  return {'statusCode': 200, 'body': f'Successfully {action}d {POLICY_SID} statement'}
+              except Exception as e:
+                  return {'statusCode': 500, 'body': str(e) }
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationS3
+          POLICY_SID: 'AllowReplicationWrite'
+      MemorySize: 128
+      Timeout: 60
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: 'W89'
+            reason: "This Lambda does not require VPC"
+          - id: 'W92'
+            reason: "One Time execution. No need for ReservedConcurrentExecutions"
+  DisableRuleSchedule:
+    Type: AWS::Events::Rule
+    Condition: DeployWriteBlocker
+    Properties:
+      Description: !Sub "Schedule for disabling replication using cron: ${DisableWriteCronSchedule}"
+      ScheduleExpression: !Sub "cron(${DisableWriteCronSchedule})"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt BucketWriteBlockerPolicyLambda.Arn
+          Id: "DisableReplicationTarget"
+          Input: '{"action": "disable"}'
+
+  EnableRuleSchedule:
+    Type: AWS::Events::Rule
+    Condition: DeployWriteBlocker
+    Properties:
+      Description: !Sub "Schedule for enabling replication using cron: ${EnableWriteCronSchedule}"
+      ScheduleExpression: !Sub "cron(${EnableWriteCronSchedule})"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt BucketWriteBlockerPolicyLambda.Arn
+          Id: "EnableReplicationTarget"
+          Input: '{"action": "enable"}'
+
+  LambdaPermissionDisable:
+    Type: AWS::Lambda::Permission
+    Condition: DeployWriteBlocker
+    Properties:
+      FunctionName: !Ref BucketWriteBlockerPolicyLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DisableRuleSchedule.Arn
+
+  LambdaPermissionEnable:
+    Type: AWS::Lambda::Permission
+    Condition: DeployWriteBlocker
+    Properties:
+      FunctionName: !Ref BucketWriteBlockerPolicyLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EnableRuleSchedule.Arn
 
   # CUR2
 
@@ -427,7 +710,7 @@ Resources:
           QueryStatement: !If [EnableSCAD, !FindInMap [DataExports, CUR2, SCADQuery], !FindInMap [DataExports, CUR2, DefaultQuery]]
           TableConfigurations:
             COST_AND_USAGE_REPORT:
-              TIME_GRANULARITY: "HOURLY"
+              TIME_GRANULARITY: !Ref CUR2TimeGranularity
               INCLUDE_RESOURCES: "TRUE"
               INCLUDE_MANUAL_DISCOUNT_COMPATIBILITY: "FALSE"
               INCLUDE_SPLIT_COST_ALLOCATION_DATA: !If [EnableSCAD, "TRUE", "FALSE"]
@@ -458,7 +741,7 @@ Resources:
           QueryStatement: !If [EnableSCAD, !FindInMap [DataExports, CUR2, SCADQuery], !FindInMap [DataExports, CUR2, DefaultQuery]]
           TableConfigurations:
             COST_AND_USAGE_REPORT:
-              TIME_GRANULARITY: "HOURLY"
+              TIME_GRANULARITY: !Ref CUR2TimeGranularity
               INCLUDE_RESOURCES: "TRUE"
               INCLUDE_MANUAL_DISCOUNT_COMPATIBILITY: "FALSE"
               INCLUDE_SPLIT_COST_ALLOCATION_DATA: !If [EnableSCAD, "TRUE", "FALSE"]
@@ -489,6 +772,9 @@ Resources:
       Export:
         DataQuery:
           QueryStatement: !FindInMap [DataExports, FOCUS, DefaultQuery]
+          TableConfigurations:
+            FOCUS_1_2_AWS:
+              TIME_GRANULARITY: !Ref FOCUSTimeGranularity
         Description: "FOCUS export for aggregation in CID"
         DestinationConfigurations:
           S3Destination:
@@ -514,6 +800,9 @@ Resources:
       Export:
         DataQuery:
           QueryStatement: !FindInMap [DataExports, FOCUS, DefaultQuery]
+          TableConfigurations:
+            FOCUS_1_2_AWS:
+              TIME_GRANULARITY: !Ref FOCUSTimeGranularity
         Description: "FOCUS export for aggregation in CID"
         DestinationConfigurations:
           S3Destination:
@@ -624,12 +913,10 @@ Resources:
                 Action:
                   - iam:GetRole
                   - iam:CreateServiceLinkedRole
-                  - iam:DeleteServiceLinkedRole
-                  - iam:GetServiceLinkedRoleDeletionStatus
                 Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/bcm-data-exports.amazonaws.com/AWSServiceRoleForBCMDataExports'
               - Effect: Allow
                 Action:
-                  - cost-optimization-hub:GetPreferences
+                  - cost-optimization-hub:ListEnrollmentStatuses
                 Resource: '*' # Cannot restrict this
 
     Metadata:
@@ -648,58 +935,101 @@ Resources:
       FunctionName: !Sub "${ResourcePrefix}-CreateServiceLinkedRoleFunction"
       Handler: index.handler
       MemorySize: 128
-      Runtime: python3.12
-      Timeout: 15
+      Runtime: python3.13
+      Timeout: 90
       Role: !GetAtt LambdaServiceLinkedRoleExecutionRole.Arn
       Code:
         ZipFile: |
           import json
+          import logging
           import time
-          import boto3
-          import cfnresponse
+
+          import boto3  # type: ignore
+          from botocore.exceptions import ClientError  # type: ignore
+          from botocore.config import Config  # type: ignore
+          import cfnresponse  # type: ignore
+
+          CUSTOM_RESOURCE_PHYSICAL_ID = "CreateServiceLinkedRoleBcmDataExports"
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          config = Config(retries={"max_attempts": 5, "mode": "standard"})
+          iam_client = boto3.client("iam", region_name="us-east-1", config=config)
+          coh_client = boto3.client("cost-optimization-hub", region_name="us-east-1", config=config)  # noqa: E501
+
 
           def handler(event, context):
-              print(json.dumps(event))
-              coh = boto3.client('cost-optimization-hub', region_name='us-east-1')
-              iam = boto3.client('iam')
+              logger.info(f"Event: {json.dumps(event, default=str)}")
+
               try:
-                  if event['RequestType'] in ['Create', 'Update']:
+                  if event["RequestType"] == "Delete":
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS,
+                                      {}, physicalResourceId=CUSTOM_RESOURCE_PHYSICAL_ID)
+                      return
 
-                      print("Make sure CO hub is activated")
-                      try:
-                          coh.get_preferences()
-                      except Exception as e:
-                          if 'AWS account is not enrolled for recommendations' in str(e):
-                              raise Exception('AWS account is not enrolled for recommendations. Please activate Cost Optimization Hub.')
-                          raise
+                  account_id = context.invoked_function_arn.split(":")[4]
+                  validate_coh_enrollment(account_id)
+                  create_service_linked_role(
+                      service_name="bcm-data-exports.amazonaws.com",
+                      description="Service-linked role for bcm-data-exports.amazonaws.com"
+                  )
 
-                      print("Creating service linked role")
-                      iam.create_service_linked_role(
-                          AWSServiceName='bcm-data-exports.amazonaws.com',
-                          Description='Service-linked role for bcm-data-exports.amazonaws.com'
-                      )
-
-                      print("Waiting for the role to be created")
-                      for i in range(60):
-                          try:
-                              iam.get_role(RoleName='AWSServiceRoleForBCMDataExports')
-                              print("Role is created")
-                              break
-                          except iam.exceptions.NoSuchEntityException:
-                              time.sleep(1)
-
-                      print("Additional wait to make sure the role is available")
-                      time.sleep(30)
-
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS,
+                                  {}, physicalResourceId=CUSTOM_RESOURCE_PHYSICAL_ID)
 
               except Exception as e:
-                  if 'has been taken in this account' in str(e):
-                      print('the role AWSServiceRoleForBCMDataExports already exist')
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  logger.exception(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED,
+                                  {}, physicalResourceId=CUSTOM_RESOURCE_PHYSICAL_ID, reason=str(e))
+
+
+          def validate_coh_enrollment(account_id: str):
+              """
+              Returns `None` if account is enrolled in Cost Optimization Hub; otherwise, raises `AssertionError`
+              """
+              logger.info("Checking if account is enrolled in COH...")
+
+              paginator = coh_client.get_paginator("list_enrollment_statuses")
+              page_iterator = paginator.paginate(accountId=account_id)
+              items = [item
+                      for page in page_iterator
+                      for item in page["items"]
+                      if item["status"] == "Active"]
+
+              if items:
+                  logger.info("Account is enrolled in COH")
+                  return
+
+              raise AssertionError(
+                  "Account is NOT enrolled in COH. Please try again after enabling Cost Optimization Hub."
+              )
+
+
+          def create_service_linked_role(service_name: str, description: str):
+              try:
+                  logger.info(f"Creating a service-linked role for {service_name}...")
+                  role_name = iam_client.create_service_linked_role(
+                      AWSServiceName=service_name,
+                      Description=description
+                  )["Role"]["RoleName"]
+
+                  logger.info(f"Waiting for the service-linked role to be available...")
+                  waiter = iam_client.get_waiter("role_exists")
+                  waiter.wait(
+                      RoleName=role_name,
+                      WaiterConfig={"Delay": 1, "MaxAttempts": 30}
+                  )
+                  time.sleep(10)  # Additional wait time, just in case
+
+                  logger.info(
+                      f"Successfully created a service-linked role for {service_name}: {role_name}")
+              except ClientError as e:
+                  if e.response["Error"]["Code"] == "InvalidInput":
+                      logger.info(
+                          f"Service-linked role for {service_name} already exists")
                   else:
-                      print(e)
-                      cfnresponse.send(event, context, cfnresponse.FAILED, {}, reason=str(e))
+                      raise
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -713,6 +1043,59 @@ Resources:
     Type: 'AWS::CloudFormation::CustomResource'
     Properties:
       ServiceToken: !GetAtt CreateServiceLinkedRoleFunction.Arn
+      ServiceTimeout: "90"
+
+  # Carbon Emissions
+
+  ## Deploy Data Export natively via CFN resource in regions that support native CFN
+  LocalCarbonViaCFN:
+    Type: AWS::BCMDataExports::Export
+    Condition: DeployCarbonViaCFN
+    DependsOn:
+      - SourceS3BucketPolicy
+    Properties:
+      Export:
+        DataQuery:
+          QueryStatement: !FindInMap [DataExports, Carbon, DefaultQuery]
+        Description: "Carbon emissions export for aggregation in CID"
+        DestinationConfigurations:
+          S3Destination:
+            S3Bucket: !Ref SourceS3
+            S3Prefix: !Sub "carbon/${AWS::AccountId}" # Explicitly hardcode name of folder (it will be the same as table name)
+            S3Region: !Ref AWS::Region
+            S3OutputConfigurations:
+              Overwrite: "OVERWRITE_REPORT"
+              Format: "PARQUET"
+              Compression: "PARQUET"
+              OutputType: "CUSTOM"
+        Name: !Sub '${ResourcePrefix}-carbon'
+        RefreshCadence:
+          Frequency: "SYNCHRONOUS"
+
+  # Deploy Data Export via Lambda due to missing CFN resource definition AWS::BCMDataExports::Export outside us-east-1 or cn-northwest-1
+  LocalCarbonViaCustomResource:
+    Type: Custom::CUR2Creator
+    Condition: DeployCarbonViaLambda
+    Properties:
+      ServiceToken: !GetAtt CidDataExportCreatorLambda.Arn
+      BucketPolicyWait: !Ref SourceS3BucketPolicy
+      Export:
+        DataQuery:
+          QueryStatement: !FindInMap [DataExports, Carbon, DefaultQuery]
+        Description: "Carbon emissions export for aggregation in CID"
+        DestinationConfigurations:
+          S3Destination:
+            S3Bucket: !Ref SourceS3
+            S3Prefix: !Sub "carbon/${AWS::AccountId}" # Explicitly hardcode name of folder (it will be the same as table name)
+            S3Region: !Ref AWS::Region
+            S3OutputConfigurations:
+              Overwrite: "OVERWRITE_REPORT"
+              Format: "PARQUET"
+              Compression: "PARQUET"
+              OutputType: "CUSTOM"
+        Name: !Sub '${ResourcePrefix}-carbon'
+        RefreshCadence:
+          Frequency: "SYNCHRONOUS"
 
 ###########################################################################
 # Lambda DataExport Creator: used to create DataExport from outside us-east-1 or cn-northwest-1
@@ -758,6 +1141,10 @@ Resources:
               Resource: !Sub "arn:${AWS::Partition}:bcm-data-exports:*:${AWS::AccountId}:*"
             - Effect: Allow
               Action:
+              - bcm-data-exports:ListExports
+              Resource: !Sub "arn:${AWS::Partition}:bcm-data-exports:*:${AWS::AccountId}:*"
+            - Effect: Allow
+              Action:
               - cur:PutReportDefinition  #need this permission for bcm-data-exports to work
               Resource: !Sub "arn:${AWS::Partition}:cur:*:${AWS::AccountId}:*"
             - Effect: Allow
@@ -765,12 +1152,15 @@ Resources:
               - cost-optimization-hub:GetRecommendation  #need this permission for bcm-data-exports to work
               - cost-optimization-hub:ListRecommendations
               Resource: "arn:aws:cost-optimization-hub:*"
+            - Effect: Allow
+              Action: sustainability:GetCarbonFootprintSummary # needed ad carbon emissions data export creation time
+              Resource: "*"
 
   CidDataExportCreatorLambda:
     Type: AWS::Lambda::Function
     Condition: DeployAnyExportViaLambda
     Properties:
-      Runtime: python3.12
+      Runtime: python3.13
       FunctionName: !Sub ${ResourcePrefix}-DataExportCreator
       Handler: index.lambda_handler
       MemorySize: 128
@@ -785,8 +1175,12 @@ Resources:
           import boto3
           import cfnresponse
 
-          # DataExports only exist in us-east-1 and cn-northwest-1 regions
-          region = 'us-east-1' if not os.environ['AWS_REGION'].startswith('cn-') else 'cn-northwest-1'
+          # DataExports only exist in paricular regions
+          region = 'us-east-1'
+          if os.environ['AWS_REGION'].startswith('cn-'):
+              region = 'cn-northwest-1'
+          if os.environ['AWS_REGION'].startswith('us-iso-'):
+              region = os.environ['AWS_REGION']
 
           client = boto3.client('bcm-data-exports', region_name=region)
 
@@ -797,30 +1191,40 @@ Resources:
 
             try:
               export = event['ResourceProperties']['Export']
-              export_name = event['ResourceProperties']['Export']['Name']
-
+              old_export = event.get('OldResourceProperties', {}).get('Export')
               if event['RequestType'] == 'Create':
                   res = client.create_export(Export=export)
                   print('created:', json.dumps(res))
               elif event['RequestType'] == 'Update':
-                  old_export_name = event['OldResourceProperties']['Export']['Name']
-                  if export["Name"] != old_export_name:
+                  old_export_name = old_export['Name']
+                  old_export_arn = list(client.get_paginator('list_exports').paginate().search(f"Exports[? ExportName=='{old_export_name}']"))[0]['ExportArn']
+                  if old_export['Name'] != old_export['Name']:
                       res = client.create_export(Export=export)
                       print('created:', json.dumps(res))
                       try:
-                          res = client.delete_export(Name=old_export_name)
+                          res = client.delete_export(ExportArn=old_export_arn)
                           print('deleted:', json.dumps(res))
-                      except:
-                          pass # Do not block deletion
+                      except Exception as exc:
+                          print('Exception on deletion:', str(exc))
+                  elif export['DataQuery'] != old_export['DataQuery']: # Data export do not support update of queries
+                      print(export['DataQuery'], '!=', old_export['DataQuery'])
+                      res = client.delete_export(ExportArn=old_export_arn)
+                      print('deleted:', json.dumps(res))
+                      res = client.create_export(Export=export)
+                      print('created:', json.dumps(res))
                   else:
-                      res = client.update_export(Name=old_export_name, Export=export)
+                      res = client.update_export(ExportArn=old_export_arn, Export=export)
                       print('updated:', json.dumps(res))
               elif event['RequestType'] == 'Delete':
+                  export_name = export['Name']
                   try:
-                      res = client.delete_export(Name=old_export_name)
+                      export_arn = list(client.get_paginator('list_exports').paginate().search(f"Exports[? ExportName=='{export_name}']"))[0]['ExportArn']
+                      res = client.delete_export(ExportArn=export_arn)
                       print('deleted:', json.dumps(res))
-                  except:
-                      pass # Do not block deletion
+                  except client.exceptions.ResourceNotFoundException:
+                      print('Not Found. Nothing to delete')
+                  except Exception as exc:
+                      print('Exception on deletion:', str(exc))
               else:
                   raise Exception("Unknown operation: " + event['RequestType'])
 
@@ -892,6 +1296,8 @@ Resources:
             - {"Name": "bill_payer_account_name", "Type": "string" }
             - {"Name": "cost_category", "Type": "map<string,string>" }
             - {"Name": "discount", "Type": "map<string,double>" }
+            - {"Name": "discount_bundled_discount", "Type": "double" }
+            - {"Name": "discount_total_discount", "Type": "double" }
             - {"Name": "identity_line_item_id", "Type": "string" }
             - {"Name": "identity_time_interval", "Type": "string" }
             - {"Name": "line_item_availability_zone", "Type": "string" }
@@ -903,6 +1309,7 @@ Resources:
             - {"Name": "line_item_resource_id", "Type": "string" }
             - {"Name": "line_item_unblended_cost", "Type": "double" }
             - {"Name": "line_item_usage_account_id", "Type": "string" }
+            - {"Name": "line_item_usage_account_name", "Type": "string" }
             - {"Name": "line_item_usage_amount", "Type": "double" }
             - {"Name": "line_item_usage_end_date", "Type": "timestamp" }
             - {"Name": "line_item_usage_start_date", "Type": "timestamp" }
@@ -921,20 +1328,20 @@ Resources:
             - {"Name": "product_to_location", "Type": "string" }
             - {"Name": "reservation_amortized_upfront_fee_for_billing_period", "Type": "double" }
             - {"Name": "reservation_effective_cost", "Type": "double" }
-            - {"Name": "reservation_end_time", "Type": "timestamp" }
+            - {"Name": "reservation_end_time", "Type": "string" }
             - {"Name": "reservation_reservation_a_r_n", "Type": "string" }
-            - {"Name": "reservation_start_time", "Type": "timestamp" }
+            - {"Name": "reservation_start_time", "Type": "string" }
             - {"Name": "reservation_unused_amortized_upfront_fee_for_billing_period", "Type": "double" }
             - {"Name": "reservation_unused_recurring_fee", "Type": "double" }
             - {"Name": "resource_tags", "Type": "map<string,string>" }
             - {"Name": "savings_plan_amortized_upfront_commitment_for_billing_period", "Type": "double" }
-            - {"Name": "savings_plan_end_time", "Type": "timestamp" }
+            - {"Name": "savings_plan_end_time", "Type": "string" }
             - {"Name": "savings_plan_offering_type", "Type": "string" }
             - {"Name": "savings_plan_payment_option", "Type": "string" }
             - {"Name": "savings_plan_purchase_term", "Type": "string" }
             - {"Name": "savings_plan_savings_plan_a_r_n", "Type": "string" }
             - {"Name": "savings_plan_savings_plan_effective_cost", "Type": "double" }
-            - {"Name": "savings_plan_start_time", "Type": "timestamp" }
+            - {"Name": "savings_plan_start_time", "Type": "string" }
             - {"Name": "savings_plan_total_commitment_to_date", "Type": "double" }
             - {"Name": "savings_plan_used_commitment", "Type": "double" }
             - {"Name": "split_line_item_parent_resource_id", "Type": "string" }
@@ -948,6 +1355,7 @@ Resources:
             - {"Name": "split_line_item_net_unused_cost", "Type": "double" }
             - {"Name": "split_line_item_public_on_demand_split_cost", "Type": "double" }
             - {"Name": "split_line_item_public_on_demand_unused_cost", "Type": "double" }
+            - {"Name": "tags", "Type": "map<string,string>" }
         PartitionKeys:
           - {"Name": "source_account_id", "Type": "string" }
           - {"Name": "report_name", "Type": "string" }
@@ -1031,9 +1439,12 @@ Resources:
             - {"Name": "billedcost", "Type": "double" }
             - {"Name": "billingaccountid", "Type": "string" }
             - {"Name": "billingaccountname", "Type": "string" }
+            - {"Name": "billingaccounttype", "Type": "string" }
             - {"Name": "billingcurrency", "Type": "string" }
             - {"Name": "billingperiodend", "Type": "timestamp" }
             - {"Name": "billingperiodstart", "Type": "timestamp" }
+            - {"Name": "capacityreservationid", "Type": "string" }
+            - {"Name": "capacityreservationstatus", "Type": "string" }
             - {"Name": "chargecategory", "Type": "string" }
             - {"Name": "chargeclass", "Type": "string" }
             - {"Name": "chargedescription", "Type": "string" }
@@ -1043,17 +1454,24 @@ Resources:
             - {"Name": "commitmentdiscountcategory", "Type": "string" }
             - {"Name": "commitmentdiscountid", "Type": "string" }
             - {"Name": "commitmentdiscountname", "Type": "string" }
+            - {"Name": "commitmentdiscountquantity", "Type": "double" }
             - {"Name": "commitmentdiscounttype", "Type": "string" }
+            - {"Name": "commitmentdiscountunit", "Type": "string" }
             - {"Name": "commitmentdiscountstatus", "Type": "string" }
             - {"Name": "consumedquantity", "Type": "double" }
             - {"Name": "consumedunit", "Type": "string" }
             - {"Name": "contractedcost", "Type": "double" }
             - {"Name": "contractedunitprice", "Type": "double" }
             - {"Name": "effectivecost", "Type": "double" }
+            - {"Name": "invoiceid", "Type": "string" }
             - {"Name": "invoiceissuername", "Type": "string" }
             - {"Name": "listcost", "Type": "double" }
             - {"Name": "listunitprice", "Type": "double" }
             - {"Name": "pricingcategory", "Type": "string" }
+            - {"Name": "pricingcurrency", "Type": "string" }
+            - {"Name": "pricingcurrencycontractedunitprice", "Type": "double" }
+            - {"Name": "pricingcurrencyeffectivecost", "Type": "double" }
+            - {"Name": "pricingcurrencylistunitprice", "Type": "double" }
             - {"Name": "pricingquantity", "Type": "double" }
             - {"Name": "pricingunit", "Type": "string" }
             - {"Name": "providername", "Type": "string" }
@@ -1065,11 +1483,18 @@ Resources:
             - {"Name": "resourcetype", "Type": "string" }
             - {"Name": "servicecategory", "Type": "string" }
             - {"Name": "servicename", "Type": "string" }
+            - {"Name": "servicesubcategory", "Type": "string" }
             - {"Name": "skuid", "Type": "string" }
+            - {"Name": "skumeter", "Type": "string" }
             - {"Name": "skupriceid", "Type": "string" }
+            - {"Name": "skupricedetails", "Type": "map<string,string>" }
             - {"Name": "subaccountid", "Type": "string" }
             - {"Name": "subaccountname", "Type": "string" }
+            - {"Name": "subaccounttype", "Type": "string" }
             - {"Name": "tags", "Type": "map<string,string>" }
+            - {"Name": "x_discounts", "Type": "map<string,double>" }
+            - {"Name": "x_operation", "Type": "string" }
+            - {"Name": "x_servicecode", "Type": "string" }
         PartitionKeys:
           - {"Name": "source_account_id", "Type": "string" }
           - {"Name": "report_name", "Type": "string" }
@@ -1221,6 +1646,181 @@ Resources:
           }
         }
 
+###########################################################################
+# Carbon emissions
+###########################################################################
+
+  CarbonTable:  # Initial creation of table. it will be updated by crawler later
+    Type: AWS::Glue::Table
+    Condition: DeployCarbonTable
+    Properties:
+      CatalogId: !Sub "${AWS::AccountId}"
+      DatabaseName: !Ref CIDDatabase
+      TableInput:
+        Name: carbon
+        Owner: owner
+        Retention: 0
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          compressionType: none
+          classification: parquet
+          UPDATED_BY_CRAWLER: !Ref CarbonCrawler
+        StorageDescriptor:
+          BucketColumns: []
+          Compressed: false
+          Location: !Sub "s3://${DestinationS3}/carbon/"
+          NumberOfBuckets: -1
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            Parameters:
+              serialization.format: '1'
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+          StoredAsSubDirectories: false
+          Columns: # All fields required for CID
+            - {"Name": "payer_account_id", "Type": "string"}
+            - {"Name": "usage_account_id", "Type": "string"}
+            - {"Name": "total_mbm_emissions_value", "Type": "double"}
+            - {"Name": "total_mbm_emissions_unit", "Type": "string"}
+            - {"Name": "total_lbm_emissions_value", "Type": "double"}
+            - {"Name": "total_lbm_emissions_unit", "Type": "string"}
+            - {"Name": "total_scope_1_emissions_unit", "Type": "string"}
+            - {"Name": "total_scope_1_emissions_value", "Type": "double"}
+            - {"Name": "total_scope_2_lbm_emissions_unit", "Type": "string"}
+            - {"Name": "total_scope_2_lbm_emissions_value", "Type": "double"}
+            - {"Name": "total_scope_2_mbm_emissions_unit", "Type": "string"}
+            - {"Name": "total_scope_2_mbm_emissions_value", "Type": "double"}
+            - {"Name": "total_scope_3_lbm_emissions_unit", "Type": "string"}
+            - {"Name": "total_scope_3_lbm_emissions_value", "Type": "double"}
+            - {"Name": "total_scope_3_mbm_emissions_unit", "Type": "string"}
+            - {"Name": "total_scope_3_mbm_emissions_value", "Type": "double"}
+            - {"Name": "model_version", "Type": "string"}
+            - {"Name": "product_code", "Type": "string"}
+            - {"Name": "usage_period_start", "Type": "timestamp"}
+            - {"Name": "usage_period_end", "Type": "timestamp"}
+            - {"Name": "last_refresh_timestamp", "Type": "timestamp"}
+            - {"Name": "region_code", "Type": "string"}
+            - {"Name": "location", "Type": "string"}
+        PartitionKeys:
+          - {"Name": "source_account_id", "Type": "string" }
+          - {"Name": "report_name", "Type": "string" }
+          - {"Name": "data", "Type": "string" }
+          - {"Name": "carbon_model_version", "Type": "string" }
+          - {"Name": "usage_period", "Type": "string" }
+
+  CarbonCrawler:
+    Type: AWS::Glue::Crawler
+    Condition: DeployCarbonTable
+    Properties:
+      Name:  !Sub "${ResourcePrefix}-DataExportCarbonCrawler"
+      Description: A recurring crawler that keeps your Carbon emissions table in Athena up-to-date.
+      Role: !GetAtt CidDataExportCrawlerRole.Arn
+      DatabaseName: !Ref CIDDatabase
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationS3}/carbon/"
+            Exclusions:
+              - '**.json'
+              - '**.yml'
+              - '**.sql'
+              - '**.csv'
+              - '**.csv.metadata'
+              - '**.gz'
+              - '**.zip'
+              - '**/cost_and_usage_data_status/*'
+              - 'aws-programmatic-access-test-object'
+      SchemaChangePolicy:
+        DeleteBehavior: LOG
+      RecrawlPolicy:
+        RecrawlBehavior: CRAWL_EVERYTHING
+      Schedule:
+        ScheduleExpression: cron(0 2 * * ? *)
+      Configuration: |
+        {
+          "Version":1.0,
+          "Grouping": {
+            "TableGroupingPolicy": "CombineCompatibleSchemas"
+          },
+          "CrawlerOutput":{
+            "Tables":{
+              "AddOrUpdateBehavior":"MergeNewColumns"
+            }
+          }
+        }
+
+  LakeFormationTagsForDatabase:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledDB
+    Properties:
+      Resource:
+        Database:
+          CatalogId: !Ref "AWS::AccountId"
+          Name: !Ref CIDDatabase
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
+
+  LakeFormationTagsForCUR2:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledCUR2
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref CIDDatabase
+          Name: !Ref CURTable
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey  # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
+
+  LakeFormationTagsForCOH:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledCOH
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref CIDDatabase
+          Name: !Ref COHTable
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey  # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
+
+  LakeFormationTagsForFOCUS:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledFOCUS
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref CIDDatabase
+          Name: !Ref FOCUSTable
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey  # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
+
+  LakeFormationTagsForCarbon:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledCarbon
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref CIDDatabase
+          Name: !Ref CarbonTable
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey  # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
 
 ###########################################################################
 # Generic Resources
@@ -1323,7 +1923,7 @@ Resources:
   CidLambdaAnalytics:
     Type: AWS::Lambda::Function
     Properties:
-      Runtime: python3.12
+      Runtime: python3.13
       FunctionName: !Sub ${ResourcePrefix}-CID-Analytics-DataExports
       Handler: index.lambda_handler
       MemorySize: 128
@@ -1446,16 +2046,18 @@ Resources:
             reason: "Need an explicit name for reference"
 
 Outputs:
-  DestinationBucketName:
+  AggregateBucketName:
+    Condition: IsDestinationAccount
     Description: Bucket with aggregate Data Exports
     Value: !Sub ${ResourcePrefix}-${DestinationAccountId}-data-exports
     Export: { Name: 'cid-DataExports-Bucket'}
   Database:
+    Condition: DeployAnyTable
     Description: Database for Data Exports
     Value:  !Join [ '_', !Split [ '-', !Sub '${ResourcePrefix}_data_export' ] ] # replace '-' to '_'
     Export: { Name: 'cid-DataExports-Database'}
   LocalAccountBucket:
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     Description: Local Bucket Name which replicate objects to centralized bucket
     Value: !Sub ${ResourcePrefix}-${AWS::AccountId}-data-local
   ReadAccessPolicyARN:
