@@ -110,6 +110,15 @@ Resources:
               - glue:Delete*
             Resource: "*"
 
+          - Effect: Allow
+            Action:
+              - athena:*
+            Resource: "*"
+          - Effect: Deny
+            Action:
+              - athena:Delete*
+            Resource: "*"
+
 Outputs:
   UserNameOutput:
     Description: The name of the created IAM user.
